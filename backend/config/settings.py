@@ -41,6 +41,7 @@ INSTALLED_APPS = [
    
     # Third-party apps
     'rest_framework',
+    'rest_framework.authtoken',
     'corsheaders',
 
     # Our custom campaign platform apps
@@ -48,7 +49,14 @@ INSTALLED_APPS = [
     'supporters',
     'volunteers',
     'events',
+    'whatsapp',
 ]
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+}
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
