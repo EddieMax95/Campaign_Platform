@@ -1,22 +1,15 @@
-from rest_framework import viewsets
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.exceptions import ValidationError
-from .models import Supporter
-from .serializers import SupporterSerializer
+from rest_framework import viewsets, permissions
+from .models import Campaign
+from .serializers import CampaignSerializer
 
-class SupporterViewSet(viewsets.ModelViewSet):
-    serializer_class = SupporterSerializer
-    permission_classes = [IsAuthenticated]
+class CampaignViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = CampaignSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        campaign_staff = self.request.user.campaignstaff_set.first()
-        if campaign_staff:
-            return Supporter.objects.filter(campaign=campaign_staff.campaign)
-        return Supporter.objects.none()
-
-    def perform_create(self, serializer):
-        campaign_staff = self.request.user.campaignstaff_set.first()
-        if campaign_staff:
-            serializer.save(campaign=campaign_staff.campaign)
-        else:
-            raise ValidationError("User is not assigned to any campaign.")
+        user = self.request.user
+        if user.is_superuser:
+            return Campaign.objects.all()
+        if hasattr(user, 'staff_profile') and user.staff_profile.campaign:
+            return Campaign.objects.filter(id=user.staff_profile.campaign.id)
+        return Campaign.objects.none()
