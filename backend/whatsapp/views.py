@@ -3,13 +3,24 @@ import json
 import requests
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.conf import settings
 from supporters.models import Supporter, Campaign
 
 VERIFY_TOKEN = os.getenv('WHATSAPP_VERIFY_TOKEN', 'my_secure_whatsapp_token_0630')
 
 def send_whatsapp_message(phone_number_id, recipient_phone, message_text):
-    token = getattr(settings, 'WHATSAPP_ACCESS_TOKEN', '')
+    token = ''
+    if phone_number_id:
+        campaign_obj = Campaign.objects.filter(whatsapp_phone_number_id=phone_number_id).first()
+        if campaign_obj:
+            print(f"🔍 Found Campaign: {campaign_obj.name} for Phone ID: {phone_number_id}")
+            if campaign_obj.whatsapp_access_token:
+                token = campaign_obj.whatsapp_access_token.strip()
+                print(f"🔑 Token retrieved (Length: {len(token)}, Starts with: {token[:10]}...)")
+            else:
+                print(f"⚠️ Warning: Campaign '{campaign_obj.name}' exists, but 'whatsapp_access_token' field is empty!")
+        else:
+            print(f"❌ Error: No Campaign object found matching phone_number_id: {phone_number_id}")
+
     url = f"https://graph.facebook.com/v19.0/{phone_number_id}/messages"
     
     headers = {

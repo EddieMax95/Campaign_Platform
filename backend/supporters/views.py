@@ -9,7 +9,7 @@ from .serializers import SupporterSerializer
 class SupporterViewSet(viewsets.ModelViewSet):
     queryset = Supporter.objects.all().order_by('-id')
     serializer_class = SupporterSerializer
-    permission_permissions = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         user = self.request.user
@@ -47,6 +47,24 @@ class SupporterViewSet(viewsets.ModelViewSet):
         if not message:
             return Response({"error": "Message content is required."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Dynamically fetch campaign credentials based on the logged-in user
+        user = request.user
+        campaign = None
+        if hasattr(user, 'staff_profile') and user.staff_profile.campaign:
+            campaign = user.staff_profile.campaign
+        elif user.is_superuser:
+            campaign_id = request.data.get('campaign_id')
+            if campaign_id:
+                from campaigns.models import Campaign
+                campaign = Campaign.objects.filter(id=campaign_id).first()
+
+        if not campaign or not campaign.whatsapp_phone_number_id or not campaign.whatsapp_access_token:
+            return Response({"error": "WhatsApp credentials not configured for this campaign."}, status=status.HTTP_400_BAD_REQUEST)
+
+        phone_number_id = campaign.whatsapp_phone_number_id
+        access_token = campaign.whatsapp_access_token
+        url = f"https://graph.facebook.com/v19.0/{phone_number_id}/messages"
+
         # Base queryset scoped to user's permissions
         base_qs = self.get_queryset()
 
@@ -67,10 +85,6 @@ class SupporterViewSet(viewsets.ModelViewSet):
 
         if not recipients:
             return Response({"error": "No valid recipients found."}, status=status.HTTP_404_NOT_FOUND)
-
-        access_token = getattr(settings, 'WHATSAPP_ACCESS_TOKEN', '')
-        phone_number_id = getattr(settings, 'WHATSAPP_PHONE_NUMBER_ID', '')
-        url = f"https://graph.facebook.com/v17.0/{phone_number_id}/messages"
 
         headers = {
             "Authorization": f"Bearer {access_token}",
