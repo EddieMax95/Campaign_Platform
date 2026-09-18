@@ -1,18 +1,21 @@
-import { FormEvent } from 'react';
+import React, { FormEvent } from 'react';
 
 interface BroadcastHubProps {
   broadcastWard: string;
   setBroadcastWard: (val: string) => void;
   customBroadcastWard: string;
   setCustomBroadcastWard: (val: string) => void;
+  pollingFilter: string;
+  setPollingFilter?: (val: string) => void;
   broadcastMessage: string;
   setBroadcastMessage: (val: string) => void;
   isBroadcasting: boolean;
   broadcastStatus: string | null;
   uniqueWards: string[];
+  uniquePollingStations?: string[];
   targetedBroadcastCount: number;
   onBroadcast: (e: FormEvent) => void;
-  selectedPhoneNumbers?: string[]; // Added to accept the active filtered array of numbers
+  selectedPhoneNumbers?: string[];
 }
 
 export default function BroadcastHub({
@@ -20,11 +23,14 @@ export default function BroadcastHub({
   setBroadcastWard,
   customBroadcastWard,
   setCustomBroadcastWard,
+  pollingFilter,
+  setPollingFilter = () => {},
   broadcastMessage,
   setBroadcastMessage,
   isBroadcasting,
   broadcastStatus,
   uniqueWards,
+  uniquePollingStations = [],
   targetedBroadcastCount,
   onBroadcast,
   selectedPhoneNumbers = [],
@@ -41,7 +47,10 @@ export default function BroadcastHub({
           <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Target Ward</label>
           <select 
             value={broadcastWard}
-            onChange={(e) => setBroadcastWard(e.target.value)}
+            onChange={(e) => {
+              setBroadcastWard(e.target.value);
+              if (e.target.value) setPollingFilter(''); // Reset polling filter if ward is chosen
+            }}
             className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:bg-white text-slate-800 transition-all"
           >
             <option value="">All Wards (Entire Constituency)</option>
@@ -63,6 +72,25 @@ export default function BroadcastHub({
               required
               className="w-full px-3.5 py-2.5 text-sm bg-white border border-emerald-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 text-slate-800 transition-all"
             />
+          </div>
+        )}
+
+        {uniquePollingStations.length > 0 && (
+          <div>
+            <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Target Polling Station (Optional)</label>
+            <select 
+              value={pollingFilter}
+              onChange={(e) => {
+                setPollingFilter(e.target.value);
+                if (e.target.value) setBroadcastWard(''); // Reset ward if polling station is chosen
+              }}
+              className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:bg-white text-slate-800 transition-all"
+            >
+              <option value="">All Polling Stations in Scope</option>
+              {uniquePollingStations.map((ps) => (
+                <option key={ps} value={ps}>{ps}</option>
+              ))}
+            </select>
           </div>
         )}
 

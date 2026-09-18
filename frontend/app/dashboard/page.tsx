@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, FormEvent } from 'react';
+import React, { useState, useEffect, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 
@@ -146,7 +146,7 @@ export default function CampaignDashboard() {
       }
 
       const response = await axios.post(
-        'http://127.0.0.1:8000/api/supporters/broadcast/', 
+        'http://127.0.0.1:8000/api/whatsapp/supporters/broadcast/', 
         payload, 
         getAuthConfig()
       );
@@ -198,7 +198,7 @@ export default function CampaignDashboard() {
   };
 
   const wardStats = supporters.reduce((acc: { [key: string]: number }, s) => {
-    const wardName = s.ward.trim() || 'Unassigned';
+    const wardName = (s.ward || '').trim() || 'Unassigned';
     acc[wardName] = (acc[wardName] || 0) + 1;
     return acc;
   }, {});
@@ -215,7 +215,7 @@ export default function CampaignDashboard() {
 
   const activeTargetWardName = broadcastWard === 'CUSTOM_TYPED' ? customBroadcastWard.trim() : broadcastWard;
   const targetedBroadcastCount = activeTargetWardName 
-    ? supporters.filter(s => s.ward.toLowerCase() === activeTargetWardName.toLowerCase()).length 
+    ? supporters.filter(s => (s.ward || '').toLowerCase() === activeTargetWardName.toLowerCase()).length 
     : filteredSupporters.length;
 
   return (
@@ -243,6 +243,8 @@ export default function CampaignDashboard() {
               setBroadcastWard={setBroadcastWard}
               customBroadcastWard={customBroadcastWard}
               setCustomBroadcastWard={setCustomBroadcastWard}
+              pollingFilter={pollingFilter}
+              setPollingFilter={setPollingFilter}
               broadcastMessage={broadcastMessage}
               setBroadcastMessage={setBroadcastMessage}
               isBroadcasting={isBroadcasting}
