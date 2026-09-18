@@ -3,6 +3,9 @@ import json
 import requests
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
 from supporters.models import Supporter, Campaign
 
 VERIFY_TOKEN = os.getenv('WHATSAPP_VERIFY_TOKEN', 'my_secure_whatsapp_token_0630')
@@ -143,3 +146,48 @@ def whatsapp_webhook(request):
             return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
             
     return HttpResponse(status=405)
+
+
+@api_view(['POST'])
+def broadcast_supporters(request):
+    """
+    Dedicated view for the candidate dashboard to send bulk WhatsApp notifications 
+    regarding upcoming meetings, dates, and campaign rallies.
+    """
+    try:
+        ward = request.data.get('ward')
+        custom_ward = request.data.get('custom_ward')
+        polling_station = request.data.get('polling_station')
+        message_text = request.data.get('message')
+
+        if not message_text:
+            return Response({'error': 'Broadcast message body is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Target only fully registered supporters
+        supporters = Supporter.objects.filter(registration_step='COMPLETED')
+
+        # Filter by ward if specified
+        target_ward = custom_ward if ward == 'CUSTOM_TYPED' else ward
+        if target_ward:
+            supporters = supporters.filter(ward__iexact=target_ward.strip())
+
+        # Filter by polling station if specified
+        if polling_station:
+            supporters = supporters.filter(polling_station__iexact=polling_station.strip())
+
+        sent_count = 0
+        for supporter in supporters:
+            if supporter.phone_number:
+                phone_id = supporter.campaign.whatsapp_phone_number_id if supporter.campaign else None
+                if phone_id:
+                    send_whatsapp_message(phone_id, supporter.phone_number, message_text)
+                    sent_count += 1
+
+        return Response({
+            'success': True, 
+            'broadcast_sent_to': sent_count
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        print(f"❌ Error handling broadcast view: {e}")
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)

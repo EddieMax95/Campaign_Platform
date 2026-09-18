@@ -40,8 +40,9 @@ class SupporterViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], url_path='broadcast')
     def broadcast_message(self, request):
         phone_number = request.data.get('phone_number')
-        phone_numbers = request.data.get('phone_numbers')  # Added to accept filtered arrays from frontend
+        phone_numbers = request.data.get('phone_numbers')  # Accepted from frontend filtered tables
         ward = request.data.get('ward')
+        polling_station = request.data.get('polling_station')  # Added polling station support
         message = request.data.get('message')
 
         if not message:
@@ -75,6 +76,10 @@ class SupporterViewSet(viewsets.ModelViewSet):
         elif phone_number:
             # Direct 1-to-1 message scenario
             recipients = [phone_number]
+        elif polling_station:
+            # Polling station filter broadcast scenario
+            station_supporters = base_qs.filter(polling_station__iexact=polling_station.strip())
+            recipients = [s.phone_number for s in station_supporters if s.phone_number]
         elif ward:
             # Ward broadcast scenario
             ward_supporters = base_qs.filter(ward__iexact=ward.strip())
