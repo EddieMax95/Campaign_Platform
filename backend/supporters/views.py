@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import Supporter
 from .serializers import SupporterSerializer
+from .tasks import send_broadcast_task  # Import the background task
 
 class SupporterViewSet(viewsets.ModelViewSet):
     queryset = Supporter.objects.all().order_by('-id')
@@ -62,10 +63,6 @@ class SupporterViewSet(viewsets.ModelViewSet):
         if not campaign or not campaign.whatsapp_phone_number_id or not campaign.whatsapp_access_token:
             return Response({"error": "WhatsApp credentials not configured for this campaign."}, status=status.HTTP_400_BAD_REQUEST)
 
-        phone_number_id = campaign.whatsapp_phone_number_id
-        access_token = campaign.whatsapp_access_token
-        url = f"https://graph.facebook.com/v19.0/{phone_number_id}/messages"
-
         # Base queryset scoped to user's permissions
         base_qs = self.get_queryset()
 
@@ -91,42 +88,11 @@ class SupporterViewSet(viewsets.ModelViewSet):
         if not recipients:
             return Response({"error": "No valid recipients found."}, status=status.HTTP_404_NOT_FOUND)
 
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-        }
-
-        sent_count = 0
-        failed_count = 0
-
-        for recipient in recipients:
-            if not recipient:
-                continue
-            cleaned_phone = str(recipient).strip().replace("+", "")
-
-            payload = {
-                "messaging_product": "whatsapp",
-                "recipient_type": "individual",
-                "to": cleaned_phone,
-                "type": "text",
-                "text": {"body": message}
-            }
-
-            try:
-                response = requests.post(url, json=payload, headers=headers)
-                print(f"Meta Status: {response.status_code}, Body: {response.text}")
-                
-                if response.status_code in [200, 201]:
-                    sent_count += 1
-                else:
-                    failed_count += 1
-            except Exception as e:
-                print(f"Request Exception: {e}")
-                failed_count += 1
+        # Offload the entire sending loop to Redis/Celery worker instantly
+        send_broadcast_task.delay(recipients, message, campaign.id)
 
         return Response({
             "success": True,
-            "sent": sent_count,
-            "failed": failed_count,
+            "detail": "Broadcast task successfully queued.",
             "total_targeted": len(recipients)
-        }, status=status.HTTP_200_OK)
+        }, status=status.HTTP_202_ACCEPTED)

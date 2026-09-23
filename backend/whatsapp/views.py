@@ -68,7 +68,7 @@ def whatsapp_webhook(request):
                 for change in entry.get('changes', []):
                     value = change.get('value', {})
                     
-                    # Extract the destination phone number ID from the incoming webhook metadata
+                    # Extract the destination phone number ID from incoming webhook metadata
                     metadata = value.get('metadata', {})
                     incoming_phone_number_id = metadata.get('phone_number_id')
                     
@@ -86,10 +86,37 @@ def whatsapp_webhook(request):
                     if messages:
                         message = messages[0]
                         sender_phone = message.get('from')
-                        msg_body = message.get('text', {}).get('body', '').strip()
                         
+                        # Safely parse text body to prevent AttributeError on status updates or non-text messages
+                        text_payload = message.get('text')
+                        msg_body = text_payload.get('body', '').strip() if text_payload else ''
+                        
+                        if not sender_phone or not msg_body:
+                            continue
+
                         print(f"📥 Received WhatsApp message from {sender_phone} on phone ID {incoming_phone_number_id}: {msg_body}")
                         
+                        active_phone_id = incoming_phone_number_id or (campaign.whatsapp_phone_number_id if campaign else '')
+
+                        # Check if a fully registered supporter already exists for this phone number
+                        existing_supporter = Supporter.objects.filter(phone_number=sender_phone, registration_step='COMPLETED').first()
+
+                        if existing_supporter:
+                            if msg_body.lower() in ['hi', 'hello', 'hey', 'start', 'register']:
+                                # Reset them back to start a fresh registration session
+                                existing_supporter.registration_step = 'WAITING_FOR_NAME'
+                                existing_supporter.full_name = ''
+                                existing_supporter.ward = ''
+                                existing_supporter.polling_station = ''
+                                existing_supporter.political_allegiance = ''
+                                existing_supporter.save()
+                                send_whatsapp_message(active_phone_id, sender_phone, "Restarting registration. Please reply with your full name:")
+                            else:
+                                # Acknowledge they are registered, give campaign announcements, and instruct how to update
+                                send_whatsapp_message(active_phone_id, sender_phone, "You are already registered! Stay tuned for our upcoming campaign announcements and rallies. If you wish to update your info, type \"START\".")
+                            continue
+
+                        # For users currently going through registration steps or starting fresh
                         supporter, created = Supporter.objects.get_or_create(
                             phone_number=sender_phone,
                             defaults={
@@ -98,18 +125,18 @@ def whatsapp_webhook(request):
                             }
                         )
 
-                        # Ensure existing supporter maps to the correct active campaign if not set
                         if campaign and not supporter.campaign:
                             supporter.campaign = campaign
-                            supporter.save()
 
                         step = supporter.registration_step
 
-                        # Use the incoming phone number ID to send responses from the exact same campaign number
-                        active_phone_id = incoming_phone_number_id or (campaign.whatsapp_phone_number_id if campaign else '')
-
-                        if step == 'START' or msg_body.lower() in ['hi', 'hello', 'hey', 'start', 'register']:
+                        # Rule 1: Only initialize/update tracking when "START" or keyword is clicked/typed
+                        if msg_body.lower() in ['hi', 'hello', 'hey', 'start', 'register']:
                             supporter.registration_step = 'WAITING_FOR_NAME'
+                            supporter.full_name = ''
+                            supporter.ward = ''
+                            supporter.polling_station = ''
+                            supporter.political_allegiance = ''
                             supporter.save()
                             send_whatsapp_message(active_phone_id, sender_phone, "Welcome to the campaign! Let's get you registered. Please reply with your full name:")
 
@@ -135,15 +162,16 @@ def whatsapp_webhook(request):
                             supporter.political_allegiance = msg_body
                             supporter.registration_step = 'COMPLETED'
                             supporter.save()
-                            send_whatsapp_message(active_phone_id, sender_phone, "Thank you! Your registration details have been successfully saved to our database.")
+                            send_whatsapp_message(active_phone_id, sender_phone, "Thank you! All your registration details have been successfully verified and saved to our database.")
 
                         else:
-                            send_whatsapp_message(active_phone_id, sender_phone, "You are already registered in our system. Type 'START' if you wish to restart your registration.")
+                            send_whatsapp_message(active_phone_id, sender_phone, "To begin or restart your campaign registration, please reply with 'START'.")
             
             return JsonResponse({'status': 'EVENT_RECEIVED'}, status=200)
+        
         except Exception as e:
             print(f"❌ Error processing webhook: {e}")
-            return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=200)
             
     return HttpResponse(status=405)
 
