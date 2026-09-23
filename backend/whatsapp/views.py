@@ -7,6 +7,8 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 from supporters.models import Supporter, Campaign
+from supporters.tasks import send_broadcast_task
+
 
 VERIFY_TOKEN = os.getenv('WHATSAPP_VERIFY_TOKEN', 'my_secure_whatsapp_token_0630')
 
@@ -203,17 +205,25 @@ def broadcast_supporters(request):
         if polling_station:
             supporters = supporters.filter(polling_station__iexact=polling_station.strip())
 
-        sent_count = 0
-        for supporter in supporters:
-            if supporter.phone_number:
-                phone_id = supporter.campaign.whatsapp_phone_number_id if supporter.campaign else None
-                if phone_id:
-                    send_whatsapp_message(phone_id, supporter.phone_number, message_text)
-                    sent_count += 1
+        # Collect unique recipients and determine campaign ID for the task
+        recipients = list(supporters.exclude(phone_number__isnull=True).exclude(phone_number='').values_list('phone_number', flat=True).distinct())
+
+        if not recipients:
+            return Response({'error': 'No matching supporters found for this broadcast.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get campaign from the first supporter
+        first_supporter = supporters.filter(campaign__isnull=False).first()
+        campaign_id = first_supporter.campaign.id if first_supporter and first_supporter.campaign else None
+
+        if not campaign_id:
+            return Response({'error': 'Campaign association missing for broadcast recipients.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Dispatch asynchronously via Celery worker to prevent buffering
+        send_broadcast_task.delay(recipients, message_text, campaign_id)
 
         return Response({
             'success': True, 
-            'broadcast_sent_to': sent_count
+            'broadcast_queued_count': len(recipients)
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
