@@ -23,6 +23,7 @@ interface Supporter {
 }
 
 interface CampaignInfo {
+  id: number; // Added id to fetch the unique QR code
   name: string;
   candidate_name?: string;
   [key: string]: any;
@@ -33,6 +34,10 @@ export default function CampaignDashboard() {
   const [campaignInfo, setCampaignInfo] = useState<CampaignInfo | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   
+  // QR Code states
+  const [qrCodeData, setQrCodeData] = useState<any>(null);
+  const [qrLoading, setQrLoading] = useState<boolean>(false);
+
   // Filter states
   const [wardFilter, setWardFilter] = useState('');
   const [pollingFilter, setPollingFilter] = useState('');
@@ -81,12 +86,30 @@ export default function CampaignDashboard() {
     try {
       const response = await axios.get('http://127.0.0.1:8000/api/campaigns/', getAuthConfig());
       const data = response.data;
-      setCampaignInfo(Array.isArray(data) ? data[0] : data.results ? data.results[0] : data);
+      const campaign = Array.isArray(data) ? data[0] : data.results ? data.results[0] : data;
+      setCampaignInfo(campaign);
+
+      // Once campaign info is retrieved, fetch its unique QR code
+      if (campaign && campaign.id) {
+        fetchQRCode(campaign.id);
+      }
     } catch (error: any) {
       if (error.response && error.response.status === 401) {
         localStorage.clear();
         router.push('/login');
       }
+    }
+  };
+
+  const fetchQRCode = async (campaignId: number) => {
+    setQrLoading(true);
+    try {
+      const response = await axios.get(`http://127.0.0.1:8000/api/campaigns/${campaignId}/qr-code/`, getAuthConfig());
+      setQrCodeData(response.data);
+    } catch (error) {
+      console.error("Failed to load QR code", error);
+    } finally {
+      setQrLoading(false);
     }
   };
 
@@ -237,6 +260,37 @@ export default function CampaignDashboard() {
               onChange={(field, val) => setForm({...form, [field]: val})} 
               onSubmit={handleSubmit} 
             />
+
+            {/* Candidate Unique Registration QR Code Widget */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 text-center">
+              <h3 className="text-md font-bold text-slate-800 mb-1">Candidate WhatsApp QR Code</h3>
+              <p className="text-xs text-slate-500 mb-4">Print or share this for automated voter registration</p>
+
+              {qrLoading ? (
+                <div className="py-8 text-sm text-slate-400">Loading scan code...</div>
+              ) : qrCodeData?.qr_code_base64 ? (
+                <div className="space-y-4">
+                  <div className="flex justify-center bg-slate-50 p-3 rounded-lg border border-slate-100 inline-block">
+                    <img 
+                      src={qrCodeData.qr_code_base64} 
+                      alt="Candidate Registration QR Code" 
+                      className="w-48 h-48 object-contain"
+                    />
+                  </div>
+                  <div>
+                    <a 
+                      href={qrCodeData.qr_code_base64} 
+                      download={`${campaignInfo?.candidate_name || 'Campaign'}_WhatsApp_QR.png`}
+                      className="inline-block w-full bg-slate-900 hover:bg-slate-800 text-white font-medium py-2 px-4 rounded-lg transition text-sm shadow-sm"
+                    >
+                      Download QR Code Image
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-red-500">QR code unavailable. Check phone configuration.</div>
+              )}
+            </div>
 
             <BroadcastHub 
               broadcastWard={broadcastWard}
